@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Chat Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            max-width: 1200px;
+            width: 100%;
+        }
+        
+        .chat-box {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        .chat-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #f0f0f0;
+            margin-bottom: 16px;
+        }
+        
+        .avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+        }
+        
+        .avatar.alice {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .avatar.bob {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        
+        .user-info h2 {
+            font-size: 20px;
+            color: #333;
+        }
+        
+        .status {
+            font-size: 14px;
+            color: #999;
+        }
+        
+        .status.connected {
+            color: #22c55e;
+        }
+        
+        .status.disconnected {
+            color: #ef4444;
+        }
+        
+        .messages {
+            height: 400px;
+            overflow-y: auto;
+            padding: 16px;
+            background: #f9fafb;
+            border-radius: 12px;
+            margin-bottom: 16px;
+        }
+        
+        .message {
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            max-width: 80%;
+            word-wrap: break-word;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .message.sent {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin-left: auto;
+        }
+        
+        .message.received {
+            background: white;
+            color: #333;
+            border: 2px solid #e5e7eb;
+        }
+        
+        .message.system {
+            background: #fef3c7;
+            color: #92400e;
+            text-align: center;
+            margin: 8px auto;
+            max-width: 100%;
+            font-size: 14px;
+        }
+        
+        .message-meta {
+            font-size: 12px;
+            opacity: 0.7;
+            margin-top: 4px;
+        }
+        
+        .input-group {
+            display: flex;
+            gap: 8px;
+        }
+        
+        input[type="text"] {
+            flex: 1;
+            padding: 14px 16px;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            font-size: 15px;
+            transition: border-color 0.3s;
+        }
+        
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            padding: 14px 28px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        
+        .btn-connect {
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+        }
+        
+        .btn-disconnect {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Alice's Chat -->
+        <div class="chat-box">
+            <div class="chat-header">
+                <div class="avatar alice">A</div>
+                <div class="user-info">
+                    <h2>Alice</h2>
+                    <div class="status" id="statusAlice">Отключен</div>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button class="btn-connect" onclick="connectAlice()">Подключить</button>
+                <button class="btn-disconnect" onclick="disconnectAlice()">Отключить</button>
+            </div>
+            
+            <div class="messages" id="messagesAlice"></div>
+            
+            <div class="input-group">
+                <input type="text" id="inputAlice" placeholder="Сообщение для Bob..." onkeypress="handleKeyAlice(event)">
+                <button onclick="sendMessageAlice()">Отправить</button>
+            </div>
+        </div>
+        
+        <!-- Bob's Chat -->
+        <div class="chat-box">
+            <div class="chat-header">
+                <div class="avatar bob">B</div>
+                <div class="user-info">
+                    <h2>Bob</h2>
+                    <div class="status" id="statusBob">Отключен</div>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button class="btn-connect" onclick="connectBob()">Подключить</button>
+                <button class="btn-disconnect" onclick="disconnectBob()">Отключить</button>
+            </div>
+            
+            <div class="messages" id="messagesBob"></div>
+            
+            <div class="input-group">
+                <input type="text" id="inputBob" placeholder="Сообщение для Alice..." onkeypress="handleKeyBob(event)">
+                <button onclick="sendMessageBob()">Отправить</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let wsAlice = null;
+        let wsBob = null;
+        const SERVER_URL = 'ws://localhost:3000/ws';
+
+        function addMessage(container, text, type, from = '') {
+            const messagesDiv = document.getElementById(container);
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            
+            const now = new Date().toLocaleTimeString('ru-RU');
+            const fromText = from ? `От: ${from}<br>` : '';
+            messageDiv.innerHTML = `
+                ${fromText}${text}
+                <div class="message-meta">${now}</div>
+            `;
+            
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function updateStatus(elementId, connected) {
+            const statusEl = document.getElementById(elementId);
+            statusEl.textContent = connected ? 'Подключен' : 'Отключен';
+            statusEl.className = connected ? 'status connected' : 'status disconnected';
+        }
+
+        // Alice functions
+        function connectAlice() {
+            if (wsAlice && wsAlice.readyState === WebSocket.OPEN) {
+                addMessage('messagesAlice', 'Уже подключен!', 'system');
+                return;
+            }
+
+            wsAlice = new WebSocket(`${SERVER_URL}?token=alice`);
+            
+            wsAlice.onopen = () => {
+                addMessage('messagesAlice', 'Подключено к серверу', 'system');
+                updateStatus('statusAlice', true);
+            };
+            
+            wsAlice.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'error') {
+                        addMessage('messagesAlice', `Ошибка: ${data.content}`, 'system');
+                    } else {
+                        addMessage('messagesAlice', data.content, 'received', data.from);
+                    }
+                } catch (e) {
+                    addMessage('messagesAlice', event.data, 'received');
+                }
+            };
+            
+            wsAlice.onerror = (error) => {
+                addMessage('messagesAlice', 'Ошибка соединения', 'system');
+                updateStatus('statusAlice', false);
+            };
+            
+            wsAlice.onclose = () => {
+                addMessage('messagesAlice', 'Соединение закрыто', 'system');
+                updateStatus('statusAlice', false);
+            };
+        }
+
+        function disconnectAlice() {
+            if (wsAlice) {
+                wsAlice.close();
+                wsAlice = null;
+            }
+        }
+
+        function sendMessageAlice() {
+            const input = document.getElementById('inputAlice');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            if (!wsAlice || wsAlice.readyState !== WebSocket.OPEN) {
+                addMessage('messagesAlice', 'Не подключен к серверу!', 'system');
+                return;
+            }
+            
+            const msg = {
+                to: 'bob',
+                content: message,
+                type: 'message'
+            };
+            
+            wsAlice.send(JSON.stringify(msg));
+            addMessage('messagesAlice', message, 'sent');
+            input.value = '';
+        }
+
+        function handleKeyAlice(event) {
+            if (event.key === 'Enter') {
+                sendMessageAlice();
+            }
+        }
+
+        // Bob functions
+        function connectBob() {
+            if (wsBob && wsBob.readyState === WebSocket.OPEN) {
+                addMessage('messagesBob', 'Уже подключен!', 'system');
+                return;
+            }
+
+            wsBob = new WebSocket(`${SERVER_URL}?token=bob`);
+            
+            wsBob.onopen = () => {
+                addMessage('messagesBob', 'Подключено к серверу', 'system');
+                updateStatus('statusBob', true);
+            };
+            
+            wsBob.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'error') {
+                        addMessage('messagesBob', `Ошибка: ${data.content}`, 'system');
+                    } else {
+                        addMessage('messagesBob', data.content, 'received', data.from);
+                    }
+                } catch (e) {
+                    addMessage('messagesBob', event.data, 'received');
+                }
+            };
+            
+            wsBob.onerror = (error) => {
+                addMessage('messagesBob', 'Ошибка соединения', 'system');
+                updateStatus('statusBob', false);
+            };
+            
+            wsBob.onclose = () => {
+                addMessage('messagesBob', 'Соединение закрыто', 'system');
+                updateStatus('statusBob', false);
+            };
+        }
+
+        function disconnectBob() {
+            if (wsBob) {
+                wsBob.close();
+                wsBob = null;
+            }
+        }
+
+        function sendMessageBob() {
+            const input = document.getElementById('inputBob');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            if (!wsBob || wsBob.readyState !== WebSocket.OPEN) {
+                addMessage('messagesBob', 'Не подключен к серверу!', 'system');
+                return;
+            }
+            
+            const msg = {
+                to: 'alice',
+                content: message,
+                type: 'message'
+            };
+            
+            wsBob.send(JSON.stringify(msg));
+            addMessage('messagesBob', message, 'sent');
+            input.value = '';
+        }
+
+        function handleKeyBob(event) {
+            if (event.key === 'Enter') {
+                sendMessageBob();
+            }
+        }
+
+        // Auto-cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (wsAlice) wsAlice.close();
+            if (wsBob) wsBob.close();
+        });
+    </script>
+</body>
+</html>
